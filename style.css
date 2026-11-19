@@ -83,12 +83,15 @@ canvas {
   font-weight: 800;
   color: #ff8a95;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .pips { display: flex; gap: 4px; justify-content: flex-end; margin-top: 4px; }
 .pips i { width: 14px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); }
 .pips i.on { background: var(--red); }
 
-.mute {
+.hud-btns { display: flex; gap: 8px; }
+.hud-btn {
+  white-space: nowrap;
   pointer-events: auto;
   appearance: none;
   border: 1px solid var(--line);
@@ -101,7 +104,8 @@ canvas {
   border-radius: 8px;
   cursor: pointer;
 }
-.mute:hover { color: var(--fg); }
+.hud-btn:hover { color: var(--fg); }
+.hud-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 /* ---------- Overlays ---------- */
 .overlay {
@@ -136,7 +140,7 @@ h1 {
   line-height: 1.15;
   letter-spacing: -0.01em;
 }
-h1 span { color: var(--gold); white-space: nowrap; }
+h1 .gold { color: var(--gold); white-space: nowrap; }
 
 h2 {
   margin: 0;
@@ -173,6 +177,45 @@ h2 {
 }
 .rules b { color: var(--fg); }
 .rules .gold { color: var(--gold); }
+
+/* Round length picker: radio buttons drawn as a segmented control */
+.field { margin: 0 0 16px; }
+.field-label {
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.seg {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.seg label { position: relative; cursor: pointer; }
+.seg input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.seg span {
+  display: block;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.seg label:hover span { color: var(--fg); }
+.seg input:checked + span { background: var(--gold); color: #1a1400; }
+.seg input:focus-visible + span { outline: 2px solid #fff; outline-offset: 2px; }
 
 .opt {
   display: flex;
@@ -220,6 +263,23 @@ h2 {
 }
 .btn-hard:hover { background: var(--red); color: #1a0005; }
 
+.btn-ghost {
+  padding: 12px 26px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 15px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28);
+}
+.btn-ghost:hover { background: rgba(255, 255, 255, 0.08); }
+
+.card-small { width: min(360px, 100%); }
+.pause-meta {
+  margin: 10px 0 22px;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .btn-link {
   appearance: none;
   border: 0;
@@ -236,7 +296,8 @@ h2 {
 .btn-link:hover { color: var(--fg); }
 .btn-link:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 4px; }
 
-.hint { margin: 12px 0 0; font-size: 12px; color: var(--muted); }.best { margin: 8px 0 0; font-size: 14px; font-weight: 700; color: var(--gold); }
+.hint { margin: 12px 0 0; font-size: 12px; color: var(--muted); }
+.best { margin: 8px 0 0; font-size: 14px; font-weight: 700; color: var(--gold); }
 .best:empty { display: none; }
 
 .final {
@@ -290,6 +351,7 @@ body.calm #time.urgent { animation: none; }
   .hud-num { font-size: 24px; }
   .hud-drain { font-size: 14px; }
   .hud-block.right { gap: 8px; }
-  .mute { padding: 4px 6px; }
+  .hud-btns { flex-direction: column; gap: 4px; }
+  .hud-btn { padding: 4px 6px; }
   .card { padding: 22px 18px; }
 }

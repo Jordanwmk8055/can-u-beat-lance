@@ -1,25 +1,27 @@
 'use strict';
 
 /* ============================================================
-   A 60-second aim trainer.
+   A timed aim trainer.
    Every tuning knob lives in CONFIG.
    ============================================================ */
 
 const CONFIG = {
   startingPoints: 1000,
-  gameLength: 60, // seconds
+  defaultLength: 60, // seconds per round
+  lengthOptions: [30, 60, 90, 120], // picked on the start screen
 
   basePoints: 100, // per shape hit
   movingBonus: 1.25, // moving shapes are worth a bit more
   critMultiplier: 1.5, // hitting the gold crit spot
 
-  // Drain stages: from `at` seconds in, every shape still on screen
-  // costs `points` once every `every` seconds. Both get worse over time.
+  // Drain stages: once `from` (a share of the round, 0–1) has passed, every
+  // shape still on screen costs `points` once every `every` seconds.
+  // Both get worse over time, at the same pace whatever the round length.
   drainSchedule: [
-    { at: 0, every: 1.0, points: 20 },
-    { at: 15, every: 0.8, points: 30 },
-    { at: 30, every: 0.6, points: 40 },
-    { at: 45, every: 0.5, points: 50 },
+    { from: 0, every: 1.0, points: 20 },
+    { from: 0.25, every: 0.8, points: 30 },
+    { from: 0.5, every: 0.6, points: 40 },
+    { from: 0.75, every: 0.5, points: 50 },
   ],
 
   missPenalty: 25, // clicking empty space
@@ -54,8 +56,14 @@ const FONT = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-
 const GOLD = '#ffd60a';
 const RED = '#ff4d5e';
 const GREEN = '#5dffa3';
-const KEYS = { best: 'aim.best', bestLance: 'aim.best.lance', muted: 'aim.muted', calm: 'aim.calm' };
-const bestKey = (mode) => (mode === 'lance' ? KEYS.bestLance : KEYS.best);
+const KEYS = { best: 'aim.best', bestLance: 'aim.best.lance', muted: 'aim.muted', calm: 'aim.calm', length: 'aim.length' };
+
+// Each mode and round length keeps its own best. 60s rounds use the original
+// keys so bests saved before round lengths existed still count.
+function bestKey(mode, length) {
+  const base = mode === 'lance' ? KEYS.bestLance : KEYS.best;
+  return length === 60 ? base : `${base}.${length}s`;
+}
 
 /* ---------- DOM ---------- */
 
@@ -87,6 +95,14 @@ const ui = {
   breakdown: $('breakdown'),
   bestLine: $('best-line'),
   stats: $('stats'),
+  lengths: $('lengths'),
+  lengthText: $('length-text'),
+  pauseBtn: $('pause-btn'),
+  pause: $('pause'),
+  pauseMeta: $('pause-meta'),
+  resume: $('resume'),
+  restart: $('restart'),
+  quit: $('quit'),
 };
 
 /* ---------- Helpers ---------- */
@@ -140,9 +156,11 @@ const store = {
 };
 
 const prefersCalm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const savedLength = store.get(KEYS.length, CONFIG.defaultLength);
 const settings = {
   muted: store.get(KEYS.muted, false),
   calm: store.get(KEYS.calm, prefersCalm), // fewer flashes, no shake / drift
+  length: CONFIG.lengthOptions.includes(savedLength) ? savedLength : CONFIG.defaultLength,
 };
 
 /* ---------- Sound ---------- */
@@ -323,7 +341,9 @@ function freshStats() {
 
 const state = {
   phase: 'menu', // menu → countdown → playing → over
+  paused: false, // only during countdown / playing; freezes everything
   mode: 'normal', // 'normal' | 'lance'
+  length: settings.length, // seconds in this round
   score: CONFIG.startingPoints,
   elapsed: 0,
   countdown: 0,
@@ -345,13 +365,13 @@ const state = {
 // Lance mode pins every difficulty knob at its end-of-game value from the first second.
 const isLance = () => state.mode === 'lance';
 
-const progress = () => (isLance() ? 1 : clamp(state.elapsed / CONFIG.gameLength, 0, 1));
+const progress = () => (isLance() ? 1 : clamp(state.elapsed / state.length, 0, 1));
 
 function drainPhaseIndex() {
   if (isLance()) return CONFIG.drainSchedule.length - 1;
   let idx = 0;
   CONFIG.drainSchedule.forEach((step, i) => {
-    if (state.elapsed >= step.at) idx = i;
+    if (state.elapsed >= step.from * state.length) idx = i;
   });
   return idx;
 }
@@ -466,13 +486,25 @@ function multiplierCenter() {
 
 /* ---------- Game flow ---------- */
 
+function blurFocus() {
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+}
+
+// Start a round from the menu or results screen (ignored mid-round).
 function startGame(mode = 'normal') {
   if (state.phase === 'countdown' || state.phase === 'playing') return;
   if (state.phase === 'over' && state.overTimer > 0) return;
+  beginRound(mode);
+}
+
+// Reset everything and count in a fresh round. Also used by Restart.
+function beginRound(mode) {
   ensureAudio();
   Object.assign(state, {
     phase: 'countdown',
+    paused: false,
     mode,
+    length: settings.length,
     countdown: 3,
     score: CONFIG.startingPoints,
     elapsed: 0,
@@ -492,11 +524,39 @@ function startGame(mode = 'normal') {
   });
   ui.menu.classList.add('hidden');
   ui.over.classList.add('hidden');
+  ui.pause.classList.add('hidden');
   ui.hud.classList.remove('hidden');
   hudH = ui.hud.offsetHeight || hudH;
-  for (const btn of [ui.start, ui.startLance, ui.again]) btn.blur();
+  blurFocus();
   sfx.count();
   updateHud(true);
+}
+
+/* ---------- Pause menu ---------- */
+
+const canPause = () => !state.paused && (state.phase === 'countdown' || state.phase === 'playing');
+
+function pauseGame() {
+  if (!canPause()) return;
+  state.paused = true;
+  const remaining = Math.ceil(Math.max(0, state.length - state.elapsed));
+  const parts = [`${remaining}s left`, `Score ${fmt(state.score)}`];
+  if (isLance()) parts.push('Lance mode');
+  ui.pauseMeta.textContent = parts.join(' · ');
+  ui.pause.classList.remove('hidden');
+  ui.resume.focus({ preventScroll: true });
+}
+
+function resumeGame() {
+  if (!state.paused) return;
+  state.paused = false;
+  ui.pause.classList.add('hidden');
+  blurFocus();
+  ensureAudio();
+}
+
+function restartGame() {
+  if (state.paused) beginRound(state.mode);
 }
 
 function endGame() {
@@ -517,13 +577,15 @@ function showResults() {
   const accuracy = shots ? Math.round((st.hits / shots) * 100) : 0;
   const critRate = st.hits ? Math.round((st.crits / st.hits) * 100) : 0;
 
-  // Lance mode keeps its own best so the two modes don't get compared.
-  const key = bestKey(state.mode);
+  // Each mode and round length keeps its own best so they don't get compared.
+  const key = bestKey(state.mode, state.length);
   const prevBest = store.get(key, null);
   const isBest = prevBest === null || final > prevBest;
   if (isBest) store.set(key, final);
 
-  ui.overTitle.textContent = isLance() ? 'Final score · Lance mode' : 'Final score';
+  ui.overTitle.textContent = ['Final score', `${state.length}s`, isLance() ? 'Lance mode' : '']
+    .filter(Boolean)
+    .join(' · ');
   ui.finalScore.textContent = fmt(final);
   ui.finalScore.classList.toggle('negative', final < 0);
   ui.breakdown.textContent =
@@ -544,12 +606,23 @@ function showResults() {
   ui.over.classList.remove('hidden');
 }
 
-function showMenu() {
-  if (state.phase !== 'over' || state.overTimer > 0) return;
-  state.phase = 'menu';
+// Back to the start screen. A round quit from the pause menu isn't scored.
+function goToMenu() {
+  Object.assign(state, { phase: 'menu', paused: false, shapes: [], effects: [], floaters: [], banner: null, combo: 0, shake: 0 });
   ui.over.classList.add('hidden');
+  ui.pause.classList.add('hidden');
   ui.hud.classList.add('hidden');
   ui.menu.classList.remove('hidden');
+  blurFocus();
+}
+
+function showMenu() {
+  if (state.phase !== 'over' || state.overTimer > 0) return;
+  goToMenu();
+}
+
+function quitToMenu() {
+  if (state.paused) goToMenu();
 }
 
 function dropCombo(label) {
@@ -654,7 +727,7 @@ function drainTick(s) {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
-  if (state.phase !== 'playing') return;
+  if (state.phase !== 'playing' || state.paused) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   e.preventDefault();
   const rect = canvas.getBoundingClientRect();
@@ -663,14 +736,30 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLInputElement) return;
-  const activatesButton = e.key === ' ' || e.key === 'Enter';
+  if (e.repeat) return;
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  const activatesButton = key === ' ' || key === 'Enter';
+  if (key === ' ' && e.target instanceof HTMLInputElement) return; // Space toggles a focused checkbox / radio
   if (activatesButton && e.target instanceof HTMLButtonElement) return; // let the focused button handle it
-  if (e.key === 'm' || e.key === 'M') {
+
+  if (key === 'Escape' || key === 'p') {
+    if (state.paused) resumeGame();
+    else pauseGame();
+    return;
+  }
+  if (key === 'm') {
     toggleMute();
     return;
   }
-  if (e.key === 'l' || e.key === 'L') {
+  if (state.paused) {
+    if (key === 'r') restartGame();
+    else if (activatesButton) {
+      e.preventDefault();
+      resumeGame();
+    }
+    return;
+  }
+  if (key === 'l') {
     e.preventDefault();
     startGame('lance');
     return;
@@ -681,10 +770,20 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// After a mouse click, drop focus from a checkbox / radio so Space still starts the game.
+// Keyboard users keep focus (they're on :focus-visible) so arrow keys keep working.
+function releaseMouseFocus(input) {
+  if (!input.matches(':focus-visible')) input.blur();
+}
+
 ui.start.addEventListener('click', () => startGame('normal'));
 ui.startLance.addEventListener('click', () => startGame('lance'));
 ui.again.addEventListener('click', () => startGame(state.mode));
 ui.toMenu.addEventListener('click', showMenu);
+ui.pauseBtn.addEventListener('click', pauseGame);
+ui.resume.addEventListener('click', resumeGame);
+ui.restart.addEventListener('click', restartGame);
+ui.quit.addEventListener('click', quitToMenu);
 ui.mute.addEventListener('click', () => {
   toggleMute();
   ui.mute.blur();
@@ -693,8 +792,20 @@ ui.calm.addEventListener('change', () => {
   settings.calm = ui.calm.checked;
   store.set(KEYS.calm, settings.calm);
   document.body.classList.toggle('calm', settings.calm);
+  releaseMouseFocus(ui.calm);
+});
+ui.lengths.addEventListener('change', (e) => {
+  if (!(e.target instanceof HTMLInputElement)) return;
+  settings.length = Number(e.target.value);
+  store.set(KEYS.length, settings.length);
+  renderLength();
+  releaseMouseFocus(e.target);
 });
 window.addEventListener('resize', resize);
+// Switching tabs or minimising mid-round pauses instead of silently draining.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseGame();
+});
 
 function toggleMute() {
   settings.muted = !settings.muted;
@@ -705,6 +816,7 @@ function toggleMute() {
 /* ---------- Update ---------- */
 
 function update(dt) {
+  if (state.paused) return;
   state.comboPop = Math.max(0, state.comboPop - dt * 3.5);
   state.shake = Math.max(0, state.shake - dt * 30);
   updateEffects(dt);
@@ -737,8 +849,8 @@ function update(dt) {
   if (state.phase !== 'playing') return;
 
   state.elapsed += dt;
-  if (state.elapsed >= CONFIG.gameLength) {
-    state.elapsed = CONFIG.gameLength;
+  if (state.elapsed >= state.length) {
+    state.elapsed = state.length;
     endGame();
     return;
   }
@@ -844,7 +956,7 @@ function updateHud(force = false) {
     hudCache.score = score;
   }
 
-  const remaining = Math.max(0, CONFIG.gameLength - state.elapsed);
+  const remaining = Math.max(0, state.length - state.elapsed);
   const timeText = remaining < 10 ? remaining.toFixed(1) : String(Math.ceil(remaining));
   if (force || timeText !== hudCache.time) {
     ui.time.textContent = timeText;
@@ -876,13 +988,31 @@ function renderMute() {
   ui.mute.textContent = settings.muted ? 'Sound: off' : 'Sound: on';
 }
 
+// Bests shown on the start screen are for the round length currently picked.
 function renderBestMenu() {
-  const best = store.get(KEYS.best, null);
-  const lanceBest = store.get(KEYS.bestLance, null);
+  const len = settings.length;
+  const best = store.get(bestKey('normal', len), null);
+  const lanceBest = store.get(bestKey('lance', len), null);
   const parts = [];
-  if (best !== null) parts.push(`Best: ${fmt(best)}`);
+  if (best !== null) parts.push(`${len}s best: ${fmt(best)}`);
   if (lanceBest !== null) parts.push(`Lance best: ${fmt(lanceBest)}`);
   ui.bestMenu.textContent = parts.join(' · ');
+}
+
+function renderLengthPicker() {
+  ui.lengths.innerHTML = CONFIG.lengthOptions
+    .map((len) => {
+      const checked = len === settings.length ? ' checked' : '';
+      return `<label><input type="radio" name="length" value="${len}"${checked}><span>${len}s</span></label>`;
+    })
+    .join('');
+}
+
+// Everything on the start screen that mentions the round length.
+function renderLength() {
+  ui.lengthText.textContent = `${settings.length} seconds`;
+  renderRules();
+  renderBestMenu();
 }
 
 function renderRules() {
@@ -893,7 +1023,7 @@ function renderRules() {
     `Every shape has a <b class="gold">gold crit spot</b> — inside it, on its edge, or hanging off it. Crits pay <b>×${c.critMultiplier}</b>.`,
     `Every shape still on screen drains points on a tick, and the drain gets worse as the game goes on: <b>${steps}</b>.`,
     `Chain hits to grow your <b>combo multiplier</b> (up to ×${c.combo.max}). A miss (−${c.missPenalty}) or ${c.combo.timeout}s without a hit resets it.`,
-    `You start with <b>${fmt(c.startingPoints)}</b> and have <b>${c.gameLength}s</b>. Your score can go negative.`,
+    `You start with <b>${fmt(c.startingPoints)}</b> and have <b>${settings.length}s</b>. Your score can go negative.`,
   ]
     .map((line) => `<li>${line}</li>`)
     .join('');
@@ -909,14 +1039,15 @@ function render(time) {
   if (state.shake > 0 && !settings.calm) {
     ctx.translate(rand(-1, 1) * state.shake, rand(-1, 1) * state.shake);
   }
-  if (state.phase === 'playing') drawMultiplier(time);
+  // The multiplier is hidden while paused so it doesn't flash behind the menu.
+  if (state.phase === 'playing' && !state.paused) drawMultiplier(time);
   const interval = drainInterval();
   for (const s of state.shapes) drawShape(s, time, interval);
   drawEffects();
   drawFloaters();
   ctx.restore();
 
-  if (state.phase === 'countdown') drawCountdown();
+  if (state.phase === 'countdown' && !state.paused) drawCountdown();
   if (state.banner) drawBanner();
 }
 
@@ -1151,9 +1282,9 @@ function loop(now) {
 
 ui.calm.checked = settings.calm;
 document.body.classList.toggle('calm', settings.calm);
-renderRules();
+renderLengthPicker();
+renderLength();
 renderMute();
-renderBestMenu();
 resize();
 updateHud(true);
 requestAnimationFrame(loop);

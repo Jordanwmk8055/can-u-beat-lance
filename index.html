@@ -23,21 +23,41 @@
         <div id="drain-rate" class="hud-drain">−20 / 1.0s</div>
         <div id="drain-pips" class="pips"><i></i><i></i><i></i><i></i></div>
       </div>
-      <button id="mute" class="mute" type="button" aria-label="Toggle sound">Sound: on</button>
+      <div class="hud-btns">
+        <button id="mute" class="hud-btn" type="button" aria-label="Toggle sound">Sound: on</button>
+        <button id="pause-btn" class="hud-btn" type="button" title="Pause (Esc)">Menu</button>
+      </div>
     </div>
   </header>
 
   <section id="menu" class="overlay">
     <div class="card">
-      <h1>60 seconds. Click fast. <span>Hit the gold.</span></h1>
+      <h1><span id="length-text">60 seconds</span>. Click fast. <span class="gold">Hit the gold.</span></h1>
       <ul id="rules" class="rules"></ul>
+      <div class="field">
+        <div id="length-label" class="field-label">Round length</div>
+        <div id="lengths" class="seg" role="radiogroup" aria-labelledby="length-label"></div>
+      </div>
       <label class="opt"><input type="checkbox" id="reduce-flash"> Reduce flashing &amp; motion</label>
       <div class="actions">
         <button id="start" class="btn" type="button">Start</button>
         <button id="start-lance" class="btn btn-hard" type="button">Start if you are Lance</button>
       </div>
-      <p class="hint">Space / Enter to start · L for Lance mode · M to mute</p>
+      <p class="hint">Space / Enter to start · L for Lance mode · Esc to pause · M to mute</p>
       <p id="best-menu" class="best"></p>
+    </div>
+  </section>
+
+  <section id="pause" class="overlay hidden" aria-labelledby="pause-title">
+    <div class="card card-small">
+      <h2 id="pause-title">Paused</h2>
+      <p id="pause-meta" class="pause-meta"></p>
+      <div class="actions">
+        <button id="resume" class="btn" type="button">Resume</button>
+        <button id="restart" class="btn btn-ghost" type="button">Restart</button>
+        <button id="quit" class="btn-link" type="button">Quit to main menu</button>
+      </div>
+      <p class="hint">Esc to resume · R to restart</p>
     </div>
   </section>
 
