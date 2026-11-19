@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <header id="hud" class="hud hidden">
+    <div class="hud-block">
+      <div class="hud-label">Score</div>
+      <div id="score" class="hud-num hud-score">1,000</div>
+    </div>
+    <div class="hud-block center">
+      <div class="hud-label">Time</div>
+      <div id="time" class="hud-num">60</div>
+    </div>
+    <div class="hud-block right">
+      <div>
+        <div class="hud-label">Drain</div>
+        <div id="drain-rate" class="hud-drain">−20 / 1.0s</div>
+        <div id="drain-pips" class="pips"><i></i><i></i><i></i><i></i></div>
+      </div>
+      <button id="mute" class="mute" type="button" aria-label="Toggle sound">Sound: on</button>
+    </div>
+  </header>
+
+  <section id="menu" class="overlay">
+    <div class="card">
+      <h1>60 seconds. Click fast. <span>Hit the gold.</span></h1>
+      <ul id="rules" class="rules"></ul>
+      <label class="opt"><input type="checkbox" id="reduce-flash"> Reduce flashing &amp; motion</label>
+      <div class="actions">
+        <button id="start" class="btn" type="button">Start</button>
+        <button id="start-lance" class="btn btn-hard" type="button">Start if you are Lance</button>
+      </div>
+      <p class="hint">Space / Enter to start · L for Lance mode · M to mute</p>
+      <p id="best-menu" class="best"></p>
+    </div>
+  </section>
+
+  <section id="over" class="overlay hidden">
+    <div class="card">
+      <h2 id="over-title">Final score</h2>
+      <div id="final-score" class="final">0</div>
+      <div id="breakdown" class="breakdown"></div>
+      <div id="best-line" class="best"></div>
+      <dl id="stats" class="stats"></dl>
+      <div class="actions">
+        <button id="again" class="btn" type="button">Play again</button>
+        <button id="to-menu" class="btn-link" type="button">Back to menu</button>
+      </div>
+      <p class="hint">Space / Enter to play again</p>
+    </div>
+  </section>
+
+  <script src="game.js"></script>
+</body>
+</html>
