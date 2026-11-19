@@ -35,12 +35,12 @@
     <div class="card">
       <h1><span id="length-text">60 seconds</span>. Click fast. <span class="gold">Hit the gold.</span></h1>
       <ul id="rules" class="rules"></ul>
+      <div class="field">
+        <div id="length-label" class="field-label">Round length</div>
+        <div id="lengths" class="seg" role="radiogroup" aria-labelledby="length-label"></div>
+      </div>
       <section class="menu-group" aria-labelledby="solo-label">
         <h3 id="solo-label" class="divider">Single player</h3>
-        <div class="field">
-          <div id="length-label" class="field-label">Round length</div>
-          <div id="lengths" class="seg" role="radiogroup" aria-labelledby="length-label"></div>
-        </div>
         <div class="actions">
           <button id="start" class="btn" type="button">Start</button>
           <button id="start-lance" class="btn btn-hard" type="button">Start if you are Lance</button>
@@ -100,9 +100,9 @@
         <label class="field-label party-name-label" for="party-name">Your name</label>
         <input id="party-name" class="text-input" type="text" maxlength="16" autocomplete="nickname" spellcheck="false">
         <button id="party-create" class="btn party-create" type="button">Create a room</button>
-        <div class="divider">or join one</div>
+        <div class="divider">or</div>
         <form id="party-join-form" class="join-row">
-          <input id="party-code" class="text-input code-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Room code">
+          <input id="party-code" class="text-input code-input" type="text" maxlength="4" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code">
           <button id="party-join-btn" class="btn btn-ghost" type="submit">Join</button>
         </form>
         <p id="party-status" class="party-status" role="status"></p>
