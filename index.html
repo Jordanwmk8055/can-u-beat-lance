@@ -28,6 +28,7 @@
         <button id="pause-btn" class="hud-btn" type="button" title="Pause (Esc)">Menu</button>
       </div>
     </div>
+    <div id="teambar" class="teambar" hidden></div>
   </header>
 
   <section id="menu" class="overlay">
@@ -42,6 +43,7 @@
       <div class="actions">
         <button id="start" class="btn" type="button">Start</button>
         <button id="start-lance" class="btn btn-hard" type="button">Start if you are Lance</button>
+        <button id="team-battle" class="btn btn-ghost" type="button">Team battle</button>
       </div>
       <p class="hint">Space / Enter to start · L for Lance mode · Esc to pause · M to mute</p>
       <p id="best-menu" class="best"></p>
@@ -57,25 +59,71 @@
         <button id="restart" class="btn btn-ghost" type="button">Restart</button>
         <button id="quit" class="btn-link" type="button">Quit to main menu</button>
       </div>
-      <p class="hint">Esc to resume · R to restart</p>
+      <p id="pause-hint" class="hint">Esc to resume · R to restart</p>
     </div>
   </section>
 
   <section id="over" class="overlay hidden">
     <div class="card">
       <h2 id="over-title">Final score</h2>
+      <div id="party-results" class="party-results" hidden></div>
       <div id="final-score" class="final">0</div>
       <div id="breakdown" class="breakdown"></div>
       <div id="best-line" class="best"></div>
       <dl id="stats" class="stats"></dl>
-      <div class="actions">
+      <div id="over-actions" class="actions">
         <button id="again" class="btn" type="button">Play again</button>
         <button id="to-menu" class="btn-link" type="button">Back to menu</button>
       </div>
-      <p class="hint">Space / Enter to play again</p>
+      <p id="over-hint" class="hint">Space / Enter to play again</p>
+      <div id="party-over-actions" class="actions" hidden>
+        <button id="party-again" class="btn" type="button">Play again</button>
+        <button id="party-to-lobby" class="btn btn-ghost" type="button">Back to lobby</button>
+        <p id="party-over-wait" class="party-wait"></p>
+        <button id="party-over-leave" class="btn-link" type="button">Leave game</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="party" class="overlay hidden" aria-labelledby="party-title">
+    <div class="card">
+      <div id="party-entry">
+        <h2 id="party-title">Team battle</h2>
+        <label class="field-label party-name-label" for="party-name">Your name</label>
+        <input id="party-name" class="text-input" type="text" maxlength="16" autocomplete="nickname" spellcheck="false">
+        <button id="party-create" class="btn party-create" type="button">Create a room</button>
+        <div class="or">or join one</div>
+        <form id="party-join-form" class="join-row">
+          <input id="party-code" class="text-input code-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Room code">
+          <button id="party-join-btn" class="btn btn-ghost" type="submit">Join</button>
+        </form>
+        <p id="party-status" class="party-status" role="status"></p>
+        <button id="party-back" class="btn-link" type="button">Back</button>
+      </div>
+
+      <div id="party-lobby" hidden>
+        <h2>Room code</h2>
+        <div id="party-code-big" class="room-code"></div>
+        <div class="invite">
+          <span id="party-link" class="invite-link"></span>
+          <button id="party-copy" class="btn-link" type="button">Copy invite link</button>
+        </div>
+        <div id="party-teams" class="teams"></div>
+        <div id="party-host-controls">
+          <div class="field">
+            <div id="party-length-label" class="field-label">Round length</div>
+            <div id="party-lengths" class="seg" role="radiogroup" aria-labelledby="party-length-label"></div>
+          </div>
+          <button id="party-start" class="btn" type="button">Start battle</button>
+          <p id="party-start-note" class="party-wait"></p>
+        </div>
+        <p id="party-wait" class="party-wait"></p>
+        <button id="party-leave" class="btn-link" type="button">Leave room</button>
+      </div>
     </div>
   </section>
 
   <script src="game.js"></script>
+  <script src="party.js"></script>
 </body>
 </html>

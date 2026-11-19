@@ -35,6 +35,7 @@ const CONFIG = {
   spawn: {
     interval: [0.9, 0.45], // seconds between spawns, start → end of game
     maxOnScreen: [3, 6], // start → end of game
+    hardCap: 30, // never more than this, even with shapes sent over in a team battle
   },
 
   shapes: {
@@ -97,8 +98,15 @@ const ui = {
   stats: $('stats'),
   lengths: $('lengths'),
   lengthText: $('length-text'),
+  teambar: $('teambar'),
+  overActions: $('over-actions'),
+  overHint: $('over-hint'),
+  partyResults: $('party-results'),
+  partyOverActions: $('party-over-actions'),
   pauseBtn: $('pause-btn'),
   pause: $('pause'),
+  pauseTitle: $('pause-title'),
+  pauseHint: $('pause-hint'),
   pauseMeta: $('pause-meta'),
   resume: $('resume'),
   restart: $('restart'),
@@ -209,6 +217,7 @@ const sfx = {
     tone(300, 0.12, { type: 'sawtooth', vol: 0.05 });
     tone(240, 0.16, { type: 'sawtooth', vol: 0.05, delay: 0.13 });
   },
+  incoming: () => tone(330, 0.14, { type: 'square', vol: 0.04, slide: 165 }),
   count: () => tone(660, 0.1, { type: 'triangle', vol: 0.09 }),
   go: () => tone(990, 0.25, { type: 'square', vol: 0.06, slide: 1480 }),
   end: () => [784, 659, 523].forEach((f, i) => tone(f, 0.18, { type: 'triangle', vol: 0.09, delay: i * 0.12 })),
@@ -364,6 +373,17 @@ const state = {
 
 // Lance mode pins every difficulty knob at its end-of-game value from the first second.
 const isLance = () => state.mode === 'lance';
+// A team battle round (see party.js).
+const inParty = () => state.mode === 'party';
+
+// Team battle (party.js) plugs into these. Solo play never needs them.
+const net = {
+  busy: () => false, // true while a team battle room is open: solo shortcuts stay off
+  pop: () => {}, // this player popped a shape
+  score: (score) => {}, // this player's score changed
+  roundOver: (summary) => {}, // this player's round ended
+  leave: () => {}, // this player quit from the in-game menu
+};
 
 const progress = () => (isLance() ? 1 : clamp(state.elapsed / state.length, 0, 1));
 
@@ -435,6 +455,8 @@ function createShape() {
     drainTimer: 0,
     flash: 0,
     seed: rand(0, TAU),
+    attack: false, // sent over by the other team in a team battle
+    attackColor: '',
   };
 }
 
@@ -455,6 +477,17 @@ function spawnShape() {
   }
   keepInBounds(s);
   state.shapes.push(s);
+  return s;
+}
+
+// Team battle: someone on the other team popped a shape, so one lands here.
+function spawnIncoming(fromName, color) {
+  if (state.phase !== 'playing' || state.shapes.length >= CONFIG.spawn.hardCap) return;
+  const s = spawnShape();
+  s.attack = true;
+  s.attackColor = color;
+  floater(s.x, s.y - s.bound - 18, `+1 from ${fromName}`, color, 15, 1.1);
+  sfx.incoming();
 }
 
 /* ---------- Effects ---------- */
@@ -492,19 +525,21 @@ function blurFocus() {
 
 // Start a round from the menu or results screen (ignored mid-round).
 function startGame(mode = 'normal') {
+  if (net.busy()) return;
   if (state.phase === 'countdown' || state.phase === 'playing') return;
   if (state.phase === 'over' && state.overTimer > 0) return;
   beginRound(mode);
 }
 
-// Reset everything and count in a fresh round. Also used by Restart.
-function beginRound(mode) {
+// Reset everything and count in a fresh round. Also used by Restart,
+// and by party.js when the host starts a team battle.
+function beginRound(mode, length = settings.length) {
   ensureAudio();
   Object.assign(state, {
     phase: 'countdown',
     paused: false,
     mode,
-    length: settings.length,
+    length,
     countdown: 3,
     score: CONFIG.startingPoints,
     elapsed: 0,
@@ -525,6 +560,7 @@ function beginRound(mode) {
   ui.menu.classList.add('hidden');
   ui.over.classList.add('hidden');
   ui.pause.classList.add('hidden');
+  ui.teambar.hidden = mode !== 'party';
   ui.hud.classList.remove('hidden');
   hudH = ui.hud.offsetHeight || hudH;
   blurFocus();
@@ -534,15 +570,26 @@ function beginRound(mode) {
 
 /* ---------- Pause menu ---------- */
 
+// In a team battle the menu doesn't freeze anything: everyone else is still playing.
 const canPause = () => !state.paused && (state.phase === 'countdown' || state.phase === 'playing');
 
 function pauseGame() {
   if (!canPause()) return;
   state.paused = true;
-  const remaining = Math.ceil(Math.max(0, state.length - state.elapsed));
-  const parts = [`${remaining}s left`, `Score ${fmt(state.score)}`];
-  if (isLance()) parts.push('Lance mode');
-  ui.pauseMeta.textContent = parts.join(' · ');
+  const teamBattle = inParty();
+  if (teamBattle) {
+    ui.pauseMeta.textContent = 'The battle keeps going while this is open.';
+  } else {
+    const remaining = Math.ceil(Math.max(0, state.length - state.elapsed));
+    const parts = [`${remaining}s left`, `Score ${fmt(state.score)}`];
+    if (isLance()) parts.push('Lance mode');
+    ui.pauseMeta.textContent = parts.join(' · ');
+  }
+  ui.pauseTitle.textContent = teamBattle ? 'Menu' : 'Paused';
+  ui.resume.textContent = teamBattle ? 'Keep playing' : 'Resume';
+  ui.restart.hidden = teamBattle;
+  ui.quit.textContent = teamBattle ? 'Leave game' : 'Quit to main menu';
+  ui.pauseHint.textContent = teamBattle ? 'Esc to close' : 'Esc to resume · R to restart';
   ui.pause.classList.remove('hidden');
   ui.resume.focus({ preventScroll: true });
 }
@@ -556,7 +603,7 @@ function resumeGame() {
 }
 
 function restartGame() {
-  if (state.paused) beginRound(state.mode);
+  if (state.paused && !inParty()) beginRound(state.mode);
 }
 
 function endGame() {
@@ -570,12 +617,38 @@ function endGame() {
   updateHud(true);
 }
 
+// The results card has a solo layout (your score, best) and a team battle layout
+// (team scores, filled in by party.js).
+function setOverLayout(teamBattle) {
+  for (const el of [ui.finalScore, ui.breakdown, ui.bestLine, ui.overActions, ui.overHint]) el.hidden = teamBattle;
+  ui.partyResults.hidden = !teamBattle;
+  ui.partyOverActions.hidden = !teamBattle;
+}
+
 function showResults() {
   const st = state.stats;
   const final = Math.round(state.score);
   const shots = st.hits + st.misses;
   const accuracy = shots ? Math.round((st.hits / shots) * 100) : 0;
   const critRate = st.hits ? Math.round((st.crits / st.hits) * 100) : 0;
+
+  const rows = [
+    ['Hits', st.hits],
+    ['Crits', `${st.crits} (${critRate}%)`],
+    ['Accuracy', `${accuracy}%`],
+    ['Best combo', `${state.bestCombo} · ×${multiplierFor(state.bestCombo).toFixed(1)}`],
+  ];
+  ui.stats.innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+
+  if (inParty()) {
+    // Team battle scores aren't saved as bests; the host collects everyone's and sends results.
+    setOverLayout(true);
+    ui.overTitle.textContent = `Team battle · ${state.length}s`;
+    ui.over.classList.remove('hidden');
+    net.roundOver({ score: final });
+    return;
+  }
+  setOverLayout(false);
 
   // Each mode and round length keeps its own best so they don't get compared.
   const key = bestKey(state.mode, state.length);
@@ -595,20 +668,13 @@ function showResults() {
   else if (isBest) ui.bestLine.textContent = `New best! (was ${fmt(prevBest)})`;
   else ui.bestLine.textContent = `Best: ${fmt(prevBest)}`;
 
-  const rows = [
-    ['Hits', st.hits],
-    ['Crits', `${st.crits} (${critRate}%)`],
-    ['Accuracy', `${accuracy}%`],
-    ['Best combo', `${state.bestCombo} · ×${multiplierFor(state.bestCombo).toFixed(1)}`],
-  ];
-  ui.stats.innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
   renderBestMenu();
   ui.over.classList.remove('hidden');
 }
 
 // Back to the start screen. A round quit from the pause menu isn't scored.
 function goToMenu() {
-  Object.assign(state, { phase: 'menu', paused: false, shapes: [], effects: [], floaters: [], banner: null, combo: 0, shake: 0 });
+  Object.assign(state, { phase: 'menu', mode: 'normal', paused: false, shapes: [], effects: [], floaters: [], banner: null, combo: 0, shake: 0 });
   ui.over.classList.add('hidden');
   ui.pause.classList.add('hidden');
   ui.hud.classList.add('hidden');
@@ -622,7 +688,9 @@ function showMenu() {
 }
 
 function quitToMenu() {
-  if (state.paused) goToMenu();
+  if (!state.paused) return;
+  if (inParty()) net.leave();
+  else goToMenu();
 }
 
 function dropCombo(label) {
@@ -698,6 +766,7 @@ function registerHit(index, crit, px, py) {
     state.shake = Math.max(state.shake, 5);
   }
   floater(px, py - 14, `+${pts}${crit ? ' CRIT' : ''}`, crit ? GOLD : '#ffffff', crit ? 26 : 20);
+  if (inParty()) net.pop(); // sends a shape to someone on the other team
 
   if (Math.floor(newMult) > Math.floor(mult)) {
     showBanner(`×${newMult.toFixed(1)}`, 'MULTIPLIER UP', 1);
@@ -737,6 +806,7 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  if (e.target instanceof HTMLInputElement && e.target.type === 'text') return; // typing a name or room code
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const activatesButton = key === ' ' || key === 'Enter';
   if (key === ' ' && e.target instanceof HTMLInputElement) return; // Space toggles a focused checkbox / radio
@@ -759,6 +829,7 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
+  if (net.busy()) return; // in a team battle room: no solo shortcuts
   if (key === 'l') {
     e.preventDefault();
     startGame('lance');
@@ -796,15 +867,14 @@ ui.calm.addEventListener('change', () => {
 });
 ui.lengths.addEventListener('change', (e) => {
   if (!(e.target instanceof HTMLInputElement)) return;
-  settings.length = Number(e.target.value);
-  store.set(KEYS.length, settings.length);
-  renderLength();
+  setLength(Number(e.target.value));
   releaseMouseFocus(e.target);
 });
 window.addEventListener('resize', resize);
 // Switching tabs or minimising mid-round pauses instead of silently draining.
+// (Not in a team battle: the round's clock keeps running for everyone.)
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) pauseGame();
+  if (document.hidden && !inParty()) pauseGame();
 });
 
 function toggleMute() {
@@ -815,8 +885,12 @@ function toggleMute() {
 
 /* ---------- Update ---------- */
 
-function update(dt) {
-  if (state.paused) return;
+// `dt` is capped so motion stays smooth after a hiccup. `rawDt` is the real time
+// that passed: a team battle's clock uses it so everyone's round ends together,
+// even if this tab was in the background for a while.
+function update(dt, rawDt = dt) {
+  if (state.paused && !inParty()) return;
+  const clockDt = inParty() ? rawDt : dt;
   state.comboPop = Math.max(0, state.comboPop - dt * 3.5);
   state.shake = Math.max(0, state.shake - dt * 30);
   updateEffects(dt);
@@ -827,7 +901,7 @@ function update(dt) {
 
   if (state.phase === 'countdown') {
     const before = Math.ceil(state.countdown);
-    state.countdown -= dt;
+    state.countdown -= clockDt;
     const after = Math.ceil(state.countdown);
     if (after !== before && after > 0) sfx.count();
     if (state.countdown <= 0) {
@@ -848,7 +922,7 @@ function update(dt) {
 
   if (state.phase !== 'playing') return;
 
-  state.elapsed += dt;
+  state.elapsed += clockDt;
   if (state.elapsed >= state.length) {
     state.elapsed = state.length;
     endGame();
@@ -954,6 +1028,7 @@ function updateHud(force = false) {
     ui.score.classList.toggle('negative', score < 0);
     if (delta && !force) pulseScore(delta > 0, score < 0);
     hudCache.score = score;
+    if (inParty()) net.score(score);
   }
 
   const remaining = Math.max(0, state.length - state.elapsed);
@@ -999,13 +1074,24 @@ function renderBestMenu() {
   ui.bestMenu.textContent = parts.join(' · ');
 }
 
-function renderLengthPicker() {
-  ui.lengths.innerHTML = CONFIG.lengthOptions
-    .map((len) => {
-      const checked = len === settings.length ? ' checked' : '';
-      return `<label><input type="radio" name="length" value="${len}"${checked}><span>${len}s</span></label>`;
-    })
-    .join('');
+// Builds the 30s / 60s / … radio buttons once, then only updates which one is
+// checked, so a keyboard user's focus survives re-renders. The team battle
+// lobby has its own copy (a different container and radio group name).
+function renderLengthPicker(container = ui.lengths, name = 'length') {
+  if (!container.querySelector('input')) {
+    container.innerHTML = CONFIG.lengthOptions
+      .map((len) => `<label><input type="radio" name="${name}" value="${len}"><span>${len}s</span></label>`)
+      .join('');
+  }
+  for (const input of container.querySelectorAll('input')) input.checked = Number(input.value) === settings.length;
+}
+
+function setLength(len) {
+  if (!CONFIG.lengthOptions.includes(len)) return;
+  settings.length = len;
+  store.set(KEYS.length, len);
+  renderLengthPicker();
+  renderLength();
 }
 
 // Everything on the start screen that mentions the round length.
@@ -1124,6 +1210,19 @@ function drawShape(s, time, interval) {
   ctx.strokeStyle = `rgba(255, 77, 94, ${0.15 + 0.7 * drainFrac * drainFrac})`;
   ctx.stroke();
 
+  // Sent over by the other team: a dashed ring in their colour.
+  if (s.attack) {
+    ctx.save();
+    ctx.setLineDash([7, 6]);
+    if (!settings.calm) ctx.lineDashOffset = -time * 24;
+    ctx.beginPath();
+    ctx.arc(0, 0, (s.outerR + 15) * appear, 0, TAU);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = s.attackColor;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   ctx.scale(appear, appear);
   ctx.rotate(s.rot);
 
@@ -1229,7 +1328,8 @@ function drawCountdown() {
   ctx.fillStyle = '#ffffff';
   ctx.globalAlpha = 0.7;
   ctx.font = `800 ${Math.max(14, Math.min(W, H) * 0.03)}px ${FONT}`;
-  ctx.fillText(isLance() ? 'GET READY, LANCE' : 'GET READY', c.x, c.y - Math.min(W, H) * 0.17);
+  const label = isLance() ? 'GET READY, LANCE' : inParty() ? 'TEAM BATTLE' : 'GET READY';
+  ctx.fillText(label, c.x, c.y - Math.min(W, H) * 0.17);
   ctx.globalAlpha = Math.min(1, t * 2.5);
   ctx.font = `900 ${Math.min(W, H) * 0.22 * (1 + 0.4 * t * t)}px ${FONT}`;
   ctx.fillText(String(n), c.x, c.y);
@@ -1273,10 +1373,11 @@ function drawBanner() {
 let last = performance.now();
 function loop(now) {
   requestAnimationFrame(loop);
-  const dt = Math.min(0.05, (now - last) / 1000); // clamp big gaps (e.g. tab switch)
+  const rawDt = Math.max(0, (now - last) / 1000);
+  const dt = Math.min(0.05, rawDt); // clamp big gaps (e.g. tab switch)
   last = now;
   if (W !== window.innerWidth || H !== window.innerHeight) resize();
-  update(dt);
+  update(dt, rawDt);
   if (W > 0 && H > 0) render(now / 1000);
 }
 
